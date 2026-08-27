@@ -1,0 +1,91 @@
+name: Deploy and run Glue pipeline
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "glue_jobs/*.py"
+      - ".github/workflows/glue-pipeline.yml"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: amazon-reviews-glue-pipeline
+  cancel-in-progress: false
+
+jobs:
+  deploy-and-run:
+    name: Deploy scripts and run ETL jobs
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Authenticate to AWS with GitHub OIDC
+        uses: aws-actions/configure-aws-credentials@v6.2.3
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Verify AWS identity
+        run: aws sts get-caller-identity --no-cli-pager
+
+      - name: Upload Glue scripts to S3
+        env:
+          GLUE_S3_BUCKET: ${{ vars.GLUE_S3_BUCKET }}
+        run: |
+          aws s3 cp glue_jobs/bronze.py "s3://${GLUE_S3_BUCKET}/scripts/bronze.py"
+          aws s3 cp glue_jobs/silver.py "s3://${GLUE_S3_BUCKET}/scripts/silver.py"
+          aws s3 cp glue_jobs/gold.py "s3://${GLUE_S3_BUCKET}/scripts/gold.py"
+
+      - name: Run Bronze, Silver, and Gold jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          run_glue_job() {
+            local job_name="$1"
+            local run_id
+            local state
+
+            run_id=$(aws glue start-job-run \
+              --job-name "$job_name" \
+              --query JobRunId \
+              --output text \
+              --no-cli-pager)
+
+            echo "Started ${job_name}: ${run_id}"
+
+            while true; do
+              state=$(aws glue get-job-run \
+                --job-name "$job_name" \
+                --run-id "$run_id" \
+                --query JobRun.JobRunState \
+                --output text \
+                --no-cli-pager)
+
+              echo "${job_name} state: ${state}"
+
+              case "$state" in
+                SUCCEEDED)
+                  return 0
+                  ;;
+                FAILED|TIMEOUT|STOPPED|ERROR|EXPIRED)
+                  echo "::error::${job_name} finished with state ${state}"
+                  return 1
+                  ;;
+              esac
+
+              sleep 30
+            done
+          }
+
+          run_glue_job "amazon-reviews-bronze"
+          run_glue_job "amazon-reviews-silver"
+          run_glue_job "amazon-reviews-gold"

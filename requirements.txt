@@ -1,4 +1,6 @@
 boto3
+aws-glue-sessions
+jupyter
 sagemaker
 scikit-learn
 pandas
