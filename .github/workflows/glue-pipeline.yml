@@ -37,10 +37,31 @@ jobs:
         run: aws sts get-caller-identity --no-cli-pager
 
       - name: Upload Bronze Glue script to S3
-        env:
-          GLUE_S3_BUCKET: ${{ vars.GLUE_S3_BUCKET }}
         run: |
-          aws s3 cp glue_jobs/bronze.py "s3://${GLUE_S3_BUCKET}/scripts/bronze.py"
+          set -euo pipefail
+
+          bronze_script_uri=$(aws glue get-job \
+            --job-name "amazon-reviews-bronze" \
+            --query 'Job.Command.ScriptLocation' \
+            --output text \
+            --no-cli-pager)
+
+          if [[ -z "$bronze_script_uri" || "$bronze_script_uri" == "None" ]]; then
+            echo "::error::The Bronze Glue job has no configured ScriptLocation"
+            exit 1
+          fi
+
+          echo "Uploading Bronze script to configured location: ${bronze_script_uri}"
+          aws s3 cp glue_jobs/bronze.py "$bronze_script_uri" --no-cli-pager
+
+          deployed_raw_path=$(aws s3 cp "$bronze_script_uri" - --no-cli-pager \
+            | grep '^RAW_PATH = ')
+          echo "Deployed script setting: ${deployed_raw_path}"
+
+          if [[ "$deployed_raw_path" != *"/raw/Reviews.csv"* ]]; then
+            echo "::error::Deployed Bronze script does not reference raw/Reviews.csv"
+            exit 1
+          fi
 
       - name: Run Bronze job
         shell: bash
@@ -84,14 +105,6 @@ jobs:
                     --output json \
                     --no-cli-pager || true
 
-                  echo "Recent Glue error logs:"
-                  aws logs get-log-events \
-                    --log-group-name "/aws-glue/jobs/error" \
-                    --log-stream-name "$run_id" \
-                    --limit 100 \
-                    --query 'events[].message' \
-                    --output text \
-                    --no-cli-pager || true
                   return 1
                   ;;
               esac
