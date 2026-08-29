@@ -78,6 +78,22 @@ jobs:
                   ;;
                 FAILED|TIMEOUT|STOPPED|ERROR|EXPIRED)
                   echo "::error::${job_name} finished with state ${state}"
+                  echo "Glue job-run details:"
+                  aws glue get-job-run \
+                    --job-name "$job_name" \
+                    --run-id "$run_id" \
+                    --query 'JobRun.{State:JobRunState,ErrorMessage:ErrorMessage,ExecutionTime:ExecutionTime,GlueVersion:GlueVersion,LogGroupName:LogGroupName}' \
+                    --output json \
+                    --no-cli-pager || true
+
+                  echo "Recent Glue error logs:"
+                  aws logs get-log-events \
+                    --log-group-name "/aws-glue/jobs/error" \
+                    --log-stream-name "$run_id" \
+                    --limit 100 \
+                    --query 'events[].message' \
+                    --output text \
+                    --no-cli-pager || true
                   return 1
                   ;;
               esac

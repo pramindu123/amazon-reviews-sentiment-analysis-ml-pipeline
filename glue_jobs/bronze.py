@@ -34,7 +34,9 @@ raw_df = (
     .option("multiLine", True)
     .option("quote", '"')
     .option("escape", '"')
-    .option("mode", "FAILFAST")
+    # Keep structurally readable rows and let the validation rules below
+    # reject bad values without terminating the entire Glue job.
+    .option("mode", "PERMISSIVE")
     .csv(RAW_PATH)
 )
 
@@ -43,20 +45,26 @@ if raw_df.columns != EXPECTED_COLUMNS:
         f"Unexpected raw schema. Expected {EXPECTED_COLUMNS}, got {raw_df.columns}"
     )
 
+def safe_integral(column_name, data_type):
+    """Cast an integer-like string without failing under Spark ANSI mode."""
+    value = F.trim(F.col(column_name))
+    return F.when(value.rlike(r"^[+-]?[0-9]+$"), value.cast(data_type))
+
+
 source_file = F.input_file_name()
 time_raw = F.trim(F.col("Time"))
-review_time_epoch = time_raw.cast("long")
+review_time_epoch = safe_integral("Time", "long")
 
 bronze_df = (
     raw_df
     .select(
-        F.col("Id").cast("long").alias("id"),
+        safe_integral("Id", "long").alias("id"),
         F.trim(F.col("ProductId")).alias("product_id"),
         F.trim(F.col("UserId")).alias("user_id"),
         F.trim(F.col("ProfileName")).alias("profile_name"),
-        F.col("HelpfulnessNumerator").cast("int").alias("helpfulness_numerator"),
-        F.col("HelpfulnessDenominator").cast("int").alias("helpfulness_denominator"),
-        F.col("Score").cast("int").alias("score"),
+        safe_integral("HelpfulnessNumerator", "int").alias("helpfulness_numerator"),
+        safe_integral("HelpfulnessDenominator", "int").alias("helpfulness_denominator"),
+        safe_integral("Score", "int").alias("score"),
         time_raw.alias("review_time_raw"),
         review_time_epoch.alias("review_time_epoch"),
         F.from_unixtime(review_time_epoch).cast("timestamp").alias("review_timestamp"),
