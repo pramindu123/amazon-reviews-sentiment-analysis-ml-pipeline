@@ -6,7 +6,7 @@ from pyspark.sql.types import StringType, StructField, StructType
 spark = SparkSession.builder.appName("amazon-reviews-raw-to-bronze").getOrCreate()
 spark.conf.set("spark.sql.session.timeZone", "UTC")
 
-RAW_PATH = "s3://amazon-food-reviews-ml-model/raw/amazon.csv"
+RAW_PATH = "s3://amazon-food-reviews-ml-model/raw/Reviews.csv"
 BRONZE_PATH = "s3://amazon-food-reviews-ml-model/bronze/"
 
 EXPECTED_COLUMNS = [
