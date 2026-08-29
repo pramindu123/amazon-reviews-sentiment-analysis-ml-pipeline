@@ -1,4 +1,4 @@
-name: Deploy and run Glue pipeline
+name: Deploy and run Glue Bronze layer
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ concurrency:
 
 jobs:
   deploy-and-run:
-    name: Deploy scripts and run ETL jobs
+    name: Deploy and run Bronze job
     runs-on: ubuntu-latest
     timeout-minutes: 90
 
@@ -36,15 +36,13 @@ jobs:
       - name: Verify AWS identity
         run: aws sts get-caller-identity --no-cli-pager
 
-      - name: Upload Glue scripts to S3
+      - name: Upload Bronze Glue script to S3
         env:
           GLUE_S3_BUCKET: ${{ vars.GLUE_S3_BUCKET }}
         run: |
           aws s3 cp glue_jobs/bronze.py "s3://${GLUE_S3_BUCKET}/scripts/bronze.py"
-          aws s3 cp glue_jobs/silver.py "s3://${GLUE_S3_BUCKET}/scripts/silver.py"
-          aws s3 cp glue_jobs/gold.py "s3://${GLUE_S3_BUCKET}/scripts/gold.py"
 
-      - name: Run Bronze, Silver, and Gold jobs
+      - name: Run Bronze job
         shell: bash
         run: |
           set -euo pipefail
@@ -103,5 +101,3 @@ jobs:
           }
 
           run_glue_job "amazon-reviews-bronze"
-          run_glue_job "amazon-reviews-silver"
-          run_glue_job "amazon-reviews-gold"
